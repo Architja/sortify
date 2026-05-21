@@ -1,0 +1,47 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Function to check if user is admin
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Users Collection
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAuthenticated() && request.auth.uid == userId; // Users can create/update own profile
+    }
+
+    // Bins Collection
+    match /bins/{binId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Scans Collection
+    match /scans/{scanId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Alerts Collection
+    match /alerts/{alertId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated(); // Scanner can create alerts
+      allow update: if isAuthenticated(); // Anyone can mark as read (or restrict to admin if preferred)
+      allow delete: if isAdmin();
+    }
+
+    // Collections Collection
+    match /collections/{collectionId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
