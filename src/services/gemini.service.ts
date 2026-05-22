@@ -1,6 +1,14 @@
+// src/services/gemini.service.ts
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
+// ---------------------------------------------------------------------------
+// 1️⃣  Create the genAI instance **only if** a real key exists.
+//     Otherwise we stay in “mock‑only” mode and never hit the external API.
+// ---------------------------------------------------------------------------
+const GEMINI_KEY = import.meta.env.VITE_GEMINI_API_KEY?.trim();
+const genAI = GEMINI_KEY && GEMINI_KEY !== 'YOUR_GEMINI_KEY'
+  ? new GoogleGenerativeAI(GEMINI_KEY)
+  : null;
 
 const FULL_MOCK_CATEGORIES = [
   {
@@ -85,6 +93,10 @@ const FULL_MOCK_CATEGORIES = [
     detectedItems: ['mixed trash'],
   }
 ];
+
+// ---------------------------------------------------------------------------
+// System prompt for Gemini (unchanged from original implementation)
+// ---------------------------------------------------------------------------
 const systemInstruction = `You are an expert waste classification AI for a smart city waste management system.
 Analyze the provided image and return ONLY a valid JSON object with no markdown, no code fences, and no additional text.
 
@@ -96,83 +108,53 @@ The JSON must follow this exact schema:
   "recyclingSuggestion": string (1-2 sentences),
   "disposalRecommendation": string (1-2 sentences),
   "hazardWarning": string or null (include only if hazardLevel is High or Hazardous),
-  "detectedItems": array of strings (specific items visible, e.g. ["PET bottle", "aluminium can"])`;
+  "detectedItems": array of strings (specific items visible, e.g. ["PET bottle", "aluminium can"]).`;
 
-/*
-Apply these hazard rules strictly:
-- Batteries of any kind -> Hazardous
-- Medical syringes, gloves, or bandages -> Hazardous
-- Broken glass -> Medium
-- Electronic devices (phones, tablets, laptops, PCBs, chargers, cables) -> High (E-Waste)
-- Food waste, leaves, vegetables -> Low
-- Mixed unidentified waste -> Medium
-- Single-use plastic bottles -> Low
-- Paint cans, aerosols -> High
-*/
+// ---------------------------------------------------------------------------
+// Helper: can we actually call Gemini?
+// ---------------------------------------------------------------------------
+function canUseGemini(): boolean {
+  return !!genAI;
+}
 
-/*
-Examples:
-- A smartphone or tablet should be classified as "wasteCategory": "E-Waste", "hazardLevel": "High".
-- A laptop or computer monitor should be "E-Waste", "High".
-- A battery (AA, AAA, lithium) should be "Metal", "Hazardous".
-- A glass water bottle should be "Glass", "Low".
-- An aluminium can should be "Metal", "Low".
-- A plastic bottle should be "Plastic", "Low".
-*/
-
-
+/**
+ * Analyze an image with Gemini. If the API key is missing or a request fails,
+ * a random mock response from `FULL_MOCK_CATEGORIES` is returned instead.
+ */
 export const analyzeWasteImage = async (base64Image: string) => {
-  // Ensure a valid Gemini API key is present.
-  console.error('API KEY BEING USED IS: ' + import.meta.env.VITE_GEMINI_API_KEY);
-if (!import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.VITE_GEMINI_API_KEY === 'YOUR_GEMINI_KEY') {
-    console.warn('Gemini API key missing or invalid – using mock response.');
-    const selected = FULL_MOCK_CATEGORIES[Math.floor(Math.random() * FULL_MOCK_CATEGORIES.length)];
-    console.log('Returning mock Gemini response (no API key):', selected);
-    return selected;
+  console.info('Gemini key in use:', GEMINI_KEY ? '✅ present' : '❌ missing – using mock data');
+
+  // --------------------------------------------------------------
+  // No real key → always mock.
+  // --------------------------------------------------------------
+  if (!canUseGemini()) {
+    const mock = FULL_MOCK_CATEGORIES[Math.floor(Math.random() * FULL_MOCK_CATEGORIES.length)];
+    console.warn('Gemini not available – returning mock response', mock);
+    return mock;
   }
 
+  // --------------------------------------------------------------
+  // Real Gemini call – fully guarded.
+  // --------------------------------------------------------------
   try {
-    // Use the system instruction defined at the top of the file.
-    const model = genAI.getGenerativeModel({
+    const model = genAI!.getGenerativeModel({
       model: 'gemini-flash-latest',
       systemInstruction,
     });
 
-    // Strip possible data URL prefix.
-    const base64Data = base64Image.split(',')[1] || base64Image;
+    const base64Data = base64Image.split(',')[1] ?? base64Image;
 
-    // Provide a short textual prompt together with the image so Gemini knows we want identification.
     const result = await model.generateContent([
       { text: 'Identify the object in this image and classify it according to the waste schema.' },
-      {
-        inlineData: {
-          data: base64Data,
-          mimeType: 'image/jpeg',
-        },
-      },
+      { inlineData: { data: base64Data, mimeType: 'image/jpeg' } },
     ]);
 
     const text = result.response.text();
-    const cleanedText = text.replace(/\`\`\`json/g, '').replace(/\`\`\`/g, '').trim();
-    try {
-      return JSON.parse(cleanedText);
-    } catch (parseError) {
-      console.warn('Failed to parse Gemini response, falling back to mock.', parseError);
-      const selected = FULL_MOCK_CATEGORIES[Math.floor(Math.random() * FULL_MOCK_CATEGORIES.length)];
-      console.log('Demo mock response selected (parse fallback):', selected);
-      return selected;
-    }
-  } catch (error: any) {
-    console.error('Gemini API Error:', error);
-    const isQuotaError = /429|quota/i.test(error.message || '');
-    if (isQuotaError) {
-      console.warn('Gemini quota exceeded – returning random mock response.');
-      const selected = FULL_MOCK_CATEGORIES[Math.floor(Math.random() * FULL_MOCK_CATEGORIES.length)];
-      console.log('Demo mock response selected (quota fallback):', selected);
-      return selected;
-    }
+    const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(clean);
+  } catch (err: any) {
+    console.error('Gemini call failed – fallback to mock', err);
     const fallback = FULL_MOCK_CATEGORIES[Math.floor(Math.random() * FULL_MOCK_CATEGORIES.length)];
-    console.log('Demo mock response selected (error fallback):', fallback);
     return fallback;
   }
 };
