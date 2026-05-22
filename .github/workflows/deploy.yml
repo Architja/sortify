@@ -31,7 +31,7 @@ jobs:
           VITE_GEMINI_API_KEY: ${{ secrets.VITE_GEMINI_API_KEY }}
           
       - name: Install Functions Dependencies
-        run: cd functions && npm ci
+        run: cd functions && npm install
           
       - name: Deploy to Firebase
         uses: w9jds/firebase-action@master
