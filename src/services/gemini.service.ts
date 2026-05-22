@@ -138,7 +138,7 @@ export const analyzeWasteImage = async (base64Image: string) => {
   // --------------------------------------------------------------
   try {
     const model = genAI!.getGenerativeModel({
-      model: 'gemini-flash-latest',
+      model: 'gemini-1.5-flash',
       systemInstruction,
     });
 
@@ -153,8 +153,7 @@ export const analyzeWasteImage = async (base64Image: string) => {
     const clean = text.replace(/```json/g, '').replace(/```/g, '').trim();
     return JSON.parse(clean);
   } catch (err: any) {
-    console.error('Gemini call failed – fallback to mock', err);
-    const fallback = FULL_MOCK_CATEGORIES[Math.floor(Math.random() * FULL_MOCK_CATEGORIES.length)];
-    return fallback;
+    console.error('Gemini API call failed:', err);
+    throw new Error(err.message || 'Failed to analyze image with Gemini AI');
   }
 };
