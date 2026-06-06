@@ -13,12 +13,13 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
-// Initialize Firebase
-const app = initializeApp(firebaseConfig);
+// Only initialize Firebase if we have an API key, to prevent top-level crash in Demo Mode
+const isDemoMode = !firebaseConfig.apiKey || firebaseConfig.apiKey === 'YOUR_API_KEY';
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
-export const storage = getStorage(app);
-export const functions = getFunctions(app);
+export const app = !isDemoMode ? initializeApp(firebaseConfig) : null as any;
+export const auth = !isDemoMode ? getAuth(app) : null as any;
+export const db = !isDemoMode ? getFirestore(app) : null as any;
+export const storage = !isDemoMode ? getStorage(app) : null as any;
+export const functions = !isDemoMode ? getFunctions(app) : null as any;
 
 export default app;
